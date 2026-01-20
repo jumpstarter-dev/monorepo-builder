@@ -46,7 +46,7 @@ test:
 	@for dir in $(SUBDIRS); do \
 		if [ -f $$dir/Makefile ]; then \
 			echo "Testing $$dir..."; \
-			$(MAKE) -C $$dir test || true; \
+			$(MAKE) -C $$dir test ; \
 		fi \
 	done
 
@@ -66,7 +66,7 @@ lint:
 	@for dir in $(SUBDIRS); do \
 		if [ -f $$dir/Makefile ]; then \
 			echo "Linting $$dir..."; \
-			$(MAKE) -C $$dir lint || true; \
+			$(MAKE) -C $$dir lint; \
 		fi \
 	done
 

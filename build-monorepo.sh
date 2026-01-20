@@ -147,6 +147,27 @@ copy_typos_config() {
     cp "${SCRIPT_DIR}/typos.toml" "${MONOREPO_DIR}/typos.toml"
 }
 
+# Fix Python package paths for monorepo structure
+fix_python_package_paths() {
+    log_info "Fixing Python package paths for monorepo structure..."
+    
+    # Update raw-options root path in all pyproject.toml files
+    # Change from '../../' to '../../../' since python/ is now under monorepo/
+    find "${MONOREPO_DIR}/python/packages" -name "pyproject.toml" | while read -r file; do
+        # Use perl for portability (works on both macOS and Linux)
+        # Replace '../..' with '../../..' in raw-options paths
+        perl -i -pe 's|\.\./\.\.|\.\./\.\./\.\.|g' "$file"
+    done
+    
+    # Also fix the template file
+    if [ -f "${MONOREPO_DIR}/python/__templates__/driver/pyproject.toml.tmpl" ]; then
+        perl -i -pe 's|\.\./\.\.|\.\./\.\./\.\.|g' \
+            "${MONOREPO_DIR}/python/__templates__/driver/pyproject.toml.tmpl"
+    fi
+    
+    log_info "Python package paths updated."
+}
+
 # Setup GitHub Actions for monorepo
 setup_github_actions() {
     log_info "Setting up GitHub Actions..."
@@ -206,6 +227,7 @@ Documentation:
 
 Configuration:
 - Add typos.toml to exclude false positives (ANDed, mosquitto, etc.)
+- Update Python package paths (raw-options root) for monorepo structure
 EOF
 )"
 
@@ -265,6 +287,10 @@ main() {
 
     # Copy typos configuration
     copy_typos_config
+    echo ""
+
+    # Fix Python package paths for monorepo structure
+    fix_python_package_paths
     echo ""
 
     # Setup GitHub Actions
