@@ -15,3 +15,12 @@ A top level Makefile is provided and copied to the base of the monorepo.
 The monorepo is constructed in ./monorepo using git, and the authorship
 and history of the repositories is preserved in the new monorepo.
 
+# Reasoning
+
+This repository is necessary because the jumpstarter project and repos
+keep advancing while we work on the monorepo, and we don't want to stop any
+development work or make it harder for developers.
+
+It's will be used temporarily, then we can archive this repository as well
+as the source repositories, and use the monorepo for development.
+
