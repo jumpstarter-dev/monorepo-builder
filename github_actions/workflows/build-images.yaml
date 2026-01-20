@@ -36,10 +36,10 @@ jobs:
           - image_name: jumpstarter-dev/jumpstarter-operator-bundle
             dockerfile: controller/deploy/operator/bundle.Dockerfile
             context: controller/deploy/operator
-          # Python images
+          # Python images (use repo root context for .git access needed by hatch-vcs)
           - image_name: jumpstarter-dev/jumpstarter
             dockerfile: python/Dockerfile
-            context: python
+            context: .
           - image_name: jumpstarter-dev/jumpstarter-utils
             dockerfile: python/Dockerfile.utils
             context: python
@@ -48,7 +48,7 @@ jobs:
             context: python
           - image_name: jumpstarter-dev/jumpstarter-devspace
             dockerfile: python/.devfile/Containerfile.client
-            context: python
+            context: .
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -61,6 +61,17 @@ jobs:
           VERSION=${VERSION#v} # remove the leading v prefix for version
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "VERSION=${VERSION}"
+          
+          # Convert to PEP 440 compliant version for Python packages
+          # Format: 0.7.0-1051-g54cd2f08 -> 0.7.0.dev1051+g54cd2f08
+          if [[ "$VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)-g([a-f0-9]+)$ ]]; then
+            PEP440_VERSION="${BASH_REMATCH[1]}.dev${BASH_REMATCH[2]}+g${BASH_REMATCH[3]}"
+          else
+            # If it's already a clean version (e.g., 0.7.0), use as-is
+            PEP440_VERSION="$VERSION"
+          fi
+          echo "PEP440_VERSION=${PEP440_VERSION}" >> $GITHUB_ENV
+          echo "PEP440_VERSION=${PEP440_VERSION}"
 
       - name: Set build args
         id: build-args
@@ -122,7 +133,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            GIT_VERSION=${{ env.VERSION }}
+            GIT_VERSION=${{ env.PEP440_VERSION }}
             GIT_COMMIT=${{ steps.build-args.outputs.git_commit }}
             BUILD_DATE=${{ steps.build-args.outputs.build_date }}
 

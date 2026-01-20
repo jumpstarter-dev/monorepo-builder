@@ -179,29 +179,40 @@ fix_multiversion_script() {
         # ${WORKTREE}/docs -> ${WORKTREE}/python/docs for docs path
         perl -i -pe 's|--project "\$\{WORKTREE\}"|--project "\${WORKTREE}/python"|g' "$SCRIPT"
         perl -i -pe 's|"\$\{WORKTREE\}/docs"|"\${WORKTREE}/python/docs"|g' "$SCRIPT"
+        perl -i -pe 's|\$\{WORKTREE\}/docs/build|\${WORKTREE}/python/docs/build|g' "$SCRIPT"
         log_info "multiversion.sh updated."
     fi
 }
 
-# Fix container files for setuptools-scm version detection
-fix_container_files() {
-    log_info "Fixing container files for version detection..."
+# Fix Python container files for monorepo structure
+fix_python_containerfiles() {
+    log_info "Fixing Python container files for monorepo structure..."
     
-    # Fix Containerfile.client (ubi9 base)
-    local FILE1="${MONOREPO_DIR}/python/.devfile/Containerfile.client"
-    if [ -f "$FILE1" ]; then
-        perl -i -pe 's|^(FROM --platform=\$BUILDPLATFORM registry\.access\.redhat\.com/ubi9/ubi:latest AS builder)$|$1\nARG GIT_VERSION\nENV SETUPTOOLS_SCM_PRETEND_VERSION=\$GIT_VERSION|' "$FILE1"
-        log_info "Containerfile.client updated."
-    fi
-    
-    # Fix Dockerfile (fedora base)
-    local FILE2="${MONOREPO_DIR}/python/Dockerfile"
-    if [ -f "$FILE2" ]; then
-        perl -i -pe 's|^(FROM --platform=\$BUILDPLATFORM fedora:42 AS builder)$|$1\nARG GIT_VERSION\nENV SETUPTOOLS_SCM_PRETEND_VERSION=\$GIT_VERSION|' "$FILE2"
+    # Fix Dockerfile
+    local DOCKERFILE="${MONOREPO_DIR}/python/Dockerfile"
+    if [ -f "$DOCKERFILE" ]; then
+        # Remove ARG/ENV lines for GIT_VERSION (no longer needed with real .git)
+        perl -i -ne 'print unless /^ARG GIT_VERSION$/' "$DOCKERFILE"
+        perl -i -ne 'print unless /^ENV SETUPTOOLS_SCM_PRETEND_VERSION=\$GIT_VERSION$/' "$DOCKERFILE"
+        # Update build paths for monorepo structure
+        perl -i -pe 's|make -C /src build|make -C /src/python build|g' "$DOCKERFILE"
+        perl -i -pe 's|source=/src/dist|source=/src/python/dist|g' "$DOCKERFILE"
         log_info "Dockerfile updated."
     fi
     
-    log_info "Container files updated for version detection."
+    # Fix Containerfile.client
+    local CONTAINERFILE="${MONOREPO_DIR}/python/.devfile/Containerfile.client"
+    if [ -f "$CONTAINERFILE" ]; then
+        # Remove ARG/ENV lines for GIT_VERSION (no longer needed with real .git)
+        perl -i -ne 'print unless /^ARG GIT_VERSION$/' "$CONTAINERFILE"
+        perl -i -ne 'print unless /^ENV SETUPTOOLS_SCM_PRETEND_VERSION=\$GIT_VERSION$/' "$CONTAINERFILE"
+        # Update build paths for monorepo structure
+        perl -i -pe 's|make -C /src build|make -C /src/python build|g' "$CONTAINERFILE"
+        perl -i -pe 's|source=/src/dist|source=/src/python/dist|g' "$CONTAINERFILE"
+        log_info "Containerfile.client updated."
+    fi
+    
+    log_info "Python container files updated for monorepo structure."
 }
 
 # Setup GitHub Actions for monorepo
@@ -265,7 +276,7 @@ Configuration:
 - Add typos.toml to exclude false positives (ANDed, mosquitto, etc.)
 - Update Python package paths (raw-options root) for monorepo structure
 - Update multiversion.sh paths for monorepo worktree structure
-- Fix container files (Dockerfile, Containerfile.client) for setuptools-scm version detection
+- Update Python Dockerfiles to use repo root context (includes .git for hatch-vcs)
 EOF
 )"
 
@@ -335,8 +346,8 @@ main() {
     fix_multiversion_script
     echo ""
 
-    # Fix container files for version detection
-    fix_container_files
+    # Fix Python container files
+    fix_python_containerfiles
     echo ""
 
     # Setup GitHub Actions
