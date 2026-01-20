@@ -180,6 +180,10 @@ fix_multiversion_script() {
         perl -i -pe 's|--project "\$\{WORKTREE\}"|--project "\${WORKTREE}/python"|g' "$SCRIPT"
         perl -i -pe 's|"\$\{WORKTREE\}/docs"|"\${WORKTREE}/python/docs"|g' "$SCRIPT"
         perl -i -pe 's|\$\{WORKTREE\}/docs/build|\${WORKTREE}/python/docs/build|g' "$SCRIPT"
+        
+        # Update BRANCHES array to only contain "main" (but keep array structure for easy additions)
+        perl -i -pe 's|^declare -a BRANCHES=\(.*\)$|declare -a BRANCHES=("main")|' "$SCRIPT"
+        
         log_info "multiversion.sh updated."
     fi
 }
