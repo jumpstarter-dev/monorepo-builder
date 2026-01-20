@@ -168,6 +168,42 @@ fix_python_package_paths() {
     log_info "Python package paths updated."
 }
 
+# Fix multiversion docs script for monorepo structure
+fix_multiversion_script() {
+    log_info "Fixing multiversion.sh for monorepo structure..."
+    
+    local SCRIPT="${MONOREPO_DIR}/python/docs/multiversion.sh"
+    if [ -f "$SCRIPT" ]; then
+        # Update paths to include python/ prefix since worktree is at monorepo root
+        # ${WORKTREE} -> ${WORKTREE}/python for project path
+        # ${WORKTREE}/docs -> ${WORKTREE}/python/docs for docs path
+        perl -i -pe 's|--project "\$\{WORKTREE\}"|--project "\${WORKTREE}/python"|g' "$SCRIPT"
+        perl -i -pe 's|"\$\{WORKTREE\}/docs"|"\${WORKTREE}/python/docs"|g' "$SCRIPT"
+        log_info "multiversion.sh updated."
+    fi
+}
+
+# Fix container files for setuptools-scm version detection
+fix_container_files() {
+    log_info "Fixing container files for version detection..."
+    
+    # Fix Containerfile.client (ubi9 base)
+    local FILE1="${MONOREPO_DIR}/python/.devfile/Containerfile.client"
+    if [ -f "$FILE1" ]; then
+        perl -i -pe 's|^(FROM --platform=\$BUILDPLATFORM registry\.access\.redhat\.com/ubi9/ubi:latest AS builder)$|$1\nARG GIT_VERSION\nENV SETUPTOOLS_SCM_PRETEND_VERSION=\$GIT_VERSION|' "$FILE1"
+        log_info "Containerfile.client updated."
+    fi
+    
+    # Fix Dockerfile (fedora base)
+    local FILE2="${MONOREPO_DIR}/python/Dockerfile"
+    if [ -f "$FILE2" ]; then
+        perl -i -pe 's|^(FROM --platform=\$BUILDPLATFORM fedora:42 AS builder)$|$1\nARG GIT_VERSION\nENV SETUPTOOLS_SCM_PRETEND_VERSION=\$GIT_VERSION|' "$FILE2"
+        log_info "Dockerfile updated."
+    fi
+    
+    log_info "Container files updated for version detection."
+}
+
 # Setup GitHub Actions for monorepo
 setup_github_actions() {
     log_info "Setting up GitHub Actions..."
@@ -228,6 +264,8 @@ Documentation:
 Configuration:
 - Add typos.toml to exclude false positives (ANDed, mosquitto, etc.)
 - Update Python package paths (raw-options root) for monorepo structure
+- Update multiversion.sh paths for monorepo worktree structure
+- Fix container files (Dockerfile, Containerfile.client) for setuptools-scm version detection
 EOF
 )"
 
@@ -291,6 +329,14 @@ main() {
 
     # Fix Python package paths for monorepo structure
     fix_python_package_paths
+    echo ""
+
+    # Fix multiversion docs script
+    fix_multiversion_script
+    echo ""
+
+    # Fix container files for version detection
+    fix_container_files
     echo ""
 
     # Setup GitHub Actions
