@@ -135,6 +135,18 @@ copy_makefile() {
     cp "${SCRIPT_DIR}/Makefile" "${MONOREPO_DIR}/Makefile"
 }
 
+# Copy README to monorepo
+copy_readme() {
+    log_info "Copying README.md to monorepo..."
+    cp "${SCRIPT_DIR}/README.monorepo.md" "${MONOREPO_DIR}/README.md"
+}
+
+# Copy typos configuration to monorepo
+copy_typos_config() {
+    log_info "Copying typos.toml to monorepo..."
+    cp "${SCRIPT_DIR}/typos.toml" "${MONOREPO_DIR}/typos.toml"
+}
+
 # Setup GitHub Actions for monorepo
 setup_github_actions() {
     log_info "Setting up GitHub Actions..."
@@ -158,7 +170,50 @@ setup_github_actions() {
         fi
     done
 
+    # Remove component-level typos.toml (using unified root config)
+    if [ -f "${MONOREPO_DIR}/controller/typos.toml" ]; then
+        log_info "Removing controller/typos.toml (using root config)..."
+        rm -f "${MONOREPO_DIR}/controller/typos.toml"
+    fi
+
     log_info "GitHub Actions setup complete."
+}
+
+# Commit the GitHub Actions changes and add remote
+finalize_monorepo() {
+    log_info "Finalizing monorepo..."
+    cd "${MONOREPO_DIR}"
+
+    # Stage all changes (deleted old .github dirs, new .github, modified e2e/action.yml)
+    git add -A
+
+    # Commit the changes
+    git commit -m "$(cat <<'EOF'
+Configure monorepo structure
+
+GitHub Actions:
+- Move all workflows to unified .github/workflows/ directory
+- Add path filters to run workflows only on relevant changes
+- Merge duplicate backport workflows into single workflow
+- Consolidate lint workflows (Go, Helm, protobuf, Python, typos)
+- Merge container image builds (controller + python) into single workflow
+- Adapt e2e/action.yml for monorepo structure (remove separate checkouts)
+- Add combined dependabot.yml for all package ecosystems
+- Remove old .github directories from controller/, e2e/, protocol/, python/
+
+Documentation:
+- Add unified README.md with overview of all components
+
+Configuration:
+- Add typos.toml to exclude false positives (ANDed, mosquitto, etc.)
+EOF
+)"
+
+    # Add remote origin
+    git remote add origin git@github.com:jumpstarter-dev/monorepo.git
+
+    cd "${SCRIPT_DIR}"
+    log_info "Monorepo finalized with remote origin added."
 }
 
 # Main execution
@@ -204,8 +259,20 @@ main() {
     copy_makefile
     echo ""
 
+    # Copy README
+    copy_readme
+    echo ""
+
+    # Copy typos configuration
+    copy_typos_config
+    echo ""
+
     # Setup GitHub Actions
     setup_github_actions
+    echo ""
+
+    # Finalize monorepo (commit changes, add remote)
+    finalize_monorepo
     echo ""
 
     # Clean up temp directory
