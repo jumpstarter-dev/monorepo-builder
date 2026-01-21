@@ -233,9 +233,18 @@ deploy_dex() {
         true
     else
         log_warn "About to install the CA certificate system-wide (requires sudo)"
-        sudo cp ca.pem /usr/local/share/ca-certificates/dex.crt
-        sudo update-ca-certificates
-        log_info "✓ CA certificate installed system-wide"
+        # Detect if this is a RHEL/Fedora system or Debian/Ubuntu system
+        if [ -d "/etc/pki/ca-trust/source/anchors" ]; then
+            # RHEL/Fedora/CentOS
+            sudo cp ca.pem /etc/pki/ca-trust/source/anchors/dex.crt
+            sudo update-ca-trust
+            log_info "✓ CA certificate installed system-wide (RHEL/Fedora)"
+        else
+            # Debian/Ubuntu
+            sudo cp ca.pem /usr/local/share/ca-certificates/dex.crt
+            sudo update-ca-certificates
+            log_info "✓ CA certificate installed system-wide (Debian/Ubuntu)"
+        fi
     fi
     
     # Add dex to /etc/hosts if not already present

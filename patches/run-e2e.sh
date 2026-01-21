@@ -133,11 +133,20 @@ main() {
     log_info "Repository Root: $REPO_ROOT"
     echo ""
     
-    # In CI mode or if --full flag is passed, run full setup
-    if is_ci || [[ "${1:-}" == "--full" ]]; then
+    # If --full flag is passed, always run full setup
+    if [[ "${1:-}" == "--full" ]]; then
         full_run
+    # In CI mode, check if setup was already done
+    elif is_ci; then
+        if check_setup 2>/dev/null; then
+            log_info "Setup already complete, skipping setup and running tests..."
+            run_tests
+        else
+            log_info "Setup not found in CI, running full setup..."
+            full_run
+        fi
     else
-        # Check if setup was done
+        # Local development: require setup to be done first
         if check_setup; then
             run_tests
         else
