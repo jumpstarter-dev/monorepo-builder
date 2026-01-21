@@ -46,6 +46,10 @@ check_setup() {
     # Load setup configuration
     source "$REPO_ROOT/.e2e-setup-complete"
     
+    # Export SSL certificate paths for Python
+    export SSL_CERT_FILE
+    export REQUESTS_CA_BUNDLE
+    
     # Verify critical components are still running
     if ! kubectl get namespace "$JS_NAMESPACE" &> /dev/null; then
         log_error "Namespace $JS_NAMESPACE not found. Please run setup-e2e.sh again."
@@ -111,6 +115,9 @@ full_run() {
     # After setup, load the configuration
     if [ -f "$REPO_ROOT/.e2e-setup-complete" ]; then
         source "$REPO_ROOT/.e2e-setup-complete"
+        # Export SSL certificate paths for Python
+        export SSL_CERT_FILE
+        export REQUESTS_CA_BUNDLE
     fi
     
     run_tests

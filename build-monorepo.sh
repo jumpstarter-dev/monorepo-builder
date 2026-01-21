@@ -42,6 +42,42 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Commit helper function
+# Usage: git_commit "Commit title" "Optional detailed message"
+git_commit() {
+    local title="$1"
+    local details="$2"
+    
+    cd "${MONOREPO_DIR}"
+    
+    # Check if there are any changes to commit
+    if git diff --quiet && git diff --cached --quiet; then
+        log_info "No changes to commit for: ${title}"
+        cd "${SCRIPT_DIR}"
+        return 0
+    fi
+    
+    # Stage all changes
+    git add -A
+    
+    # Create commit message
+    local commit_msg="$title"
+    if [ -n "$details" ]; then
+        commit_msg="$(cat <<EOF
+$title
+
+$details
+EOF
+)"
+    fi
+    
+    # Commit
+    git commit -m "$commit_msg"
+    log_info "✓ Committed: ${title}"
+    
+    cd "${SCRIPT_DIR}"
+}
+
 # Cleanup function for trap
 cleanup() {
     if [ $? -ne 0 ]; then
@@ -181,11 +217,10 @@ fix_multiversion_script() {
         perl -i -pe 's|"\$\{WORKTREE\}/docs"|"\${WORKTREE}/python/docs"|g' "$SCRIPT"
         perl -i -pe 's|\$\{WORKTREE\}/docs/build|\${WORKTREE}/python/docs/build|g' "$SCRIPT"
         
-        # Update BRANCHES array to only contain "main" (but keep array structure for easy additions)
-        # COMMENTED OUT: We're merging release branches from python repo to support multi-version docs
-        # perl -i -pe 's|^declare -a BRANCHES=\(.*\)$|declare -a BRANCHES=("main")|' "$SCRIPT"
+        # Remove release-0.5 from BRANCHES array
+        perl -i -pe 's/"release-0\.5"\s*//g' "$SCRIPT"
         
-        log_info "multiversion.sh updated."
+        log_info "multiversion.sh updated (removed release-0.5)."
     fi
 }
 
@@ -220,41 +255,29 @@ fix_python_containerfiles() {
     log_info "Python container files updated for monorepo structure."
 }
 
-# Fix e2e dex configuration to use nip.io instead of /etc/hosts
-fix_e2e_dex_config() {
-    log_info "Fixing e2e dex configuration to use nip.io..."
+# Fix e2e dex certificate (placeholder)
+fix_e2e_dex_cert() {
+    log_info "Checking e2e dex certificate configuration..."
+    # TODO: Add dex certificate fixes if needed
+    log_info "No dex certificate fixes needed at this time."
+}
+
+# Fix Kind cluster config to add dex nodeport
+fix_kind_cluster_config() {
+    log_info "Fixing Kind cluster config for e2e tests..."
     
-    # Fix dex-csr.json to include dex.127.0.0.1.nip.io in certificate hosts
-    local DEX_CSR="${MONOREPO_DIR}/e2e/dex-csr.json"
-    if [ -f "$DEX_CSR" ]; then
-        perl -i -pe 's|("hosts": \[\s*"dex\.dex\.svc\.cluster\.local")|$1,\n        "dex.127.0.0.1.nip.io"|' "$DEX_CSR"
-        log_info "✓ dex-csr.json updated to include dex.127.0.0.1.nip.io"
+    local KIND_CONFIG="${MONOREPO_DIR}/controller/hack/kind_cluster.yaml"
+    if [ -f "$KIND_CONFIG" ]; then
+        # Add dex nodeport (32000:5556) before the 443 port mapping
+        # Only add if not already present
+        if ! grep -q "containerPort: 32000" "$KIND_CONFIG"; then
+            perl -i -pe 's|(  - containerPort: 443)|  - containerPort: 32000 # dex nodeport\n    hostPort: 5556\n    protocol: TCP\n\n$1|' "$KIND_CONFIG"
+            log_info "✓ Added dex nodeport to kind_cluster.yaml"
+        fi
+        
+        # Update grpc router comment (remove replica number)
+        perl -i -pe 's|# grpc router nodeport \(replica \d+\)|# grpc router nodeport|' "$KIND_CONFIG"
     fi
-    
-    # Fix dex.values.yaml to use dex.127.0.0.1.nip.io as issuer
-    local DEX_VALUES="${MONOREPO_DIR}/e2e/dex.values.yaml"
-    if [ -f "$DEX_VALUES" ]; then
-        perl -i -pe 's|https://dex\.dex\.svc\.cluster\.local:5556|https://dex.127.0.0.1.nip.io:5556|g' "$DEX_VALUES"
-        log_info "✓ dex.values.yaml updated to use dex.127.0.0.1.nip.io"
-    fi
-    
-    # Fix values.kind.yaml to use dex.127.0.0.1.nip.io as issuer URL
-    local VALUES_KIND="${MONOREPO_DIR}/e2e/values.kind.yaml"
-    if [ -f "$VALUES_KIND" ]; then
-        perl -i -pe 's|url: https://dex\.dex\.svc\.cluster\.local:5556|url: https://dex.127.0.0.1.nip.io:5556|g' "$VALUES_KIND"
-        log_info "✓ values.kind.yaml updated to use dex.127.0.0.1.nip.io"
-    fi
-    
-    # Fix tests.bats to use dex.127.0.0.1.nip.io for all login commands
-    local TESTS_BATS="${MONOREPO_DIR}/e2e/tests.bats"
-    if [ -f "$TESTS_BATS" ]; then
-        perl -i -pe 's|https://dex\.dex\.svc\.cluster\.local:5556|https://dex.127.0.0.1.nip.io:5556|g' "$TESTS_BATS"
-        # Replace $GITHUB_ACTION_PATH with e2e directory (tests run from monorepo root)
-        perl -i -pe 's|\$GITHUB_ACTION_PATH|e2e|g' "$TESTS_BATS"
-        log_info "✓ tests.bats updated to use dex.127.0.0.1.nip.io and e2e paths"
-    fi
-    
-    log_info "E2E dex configuration updated (no /etc/hosts modification needed)."
 }
 
 # Setup GitHub Actions for monorepo
@@ -310,55 +333,34 @@ copy_e2e_scripts() {
     else
         log_warn "Warning: patches/run-e2e.sh not found, skipping..."
     fi
+    
+    # Copy tests.bats (replaces upstream version)
+    if [ -f "${SCRIPT_DIR}/patches/tests.bats" ]; then
+        cp "${SCRIPT_DIR}/patches/tests.bats" "${MONOREPO_DIR}/e2e/tests.bats"
+        log_info "✓ E2E tests.bats installed at e2e/tests.bats"
+    else
+        log_warn "Warning: patches/tests.bats not found, skipping..."
+    fi
 }
 
-# Commit the GitHub Actions changes and add remote
+# Finalize monorepo and add remote
 finalize_monorepo() {
     log_info "Finalizing monorepo..."
     cd "${MONOREPO_DIR}"
 
-    # Stage all changes (deleted old .github dirs, new .github, modified e2e/action.yml)
-    git add -A
-
-    # Commit the changes
-    git commit -m "$(cat <<'EOF'
-Configure monorepo structure
-
-GitHub Actions:
-- Move all workflows to unified .github/workflows/ directory
-- Add path filters to run workflows only on relevant changes
-- Merge duplicate backport workflows into single workflow
-- Consolidate lint workflows (Go, Helm, protobuf, Python, typos)
-- Merge container image builds (controller + python) into single workflow
-- E2E workflow uses make targets (e2e-setup, e2e-run) instead of composite action
-- Add combined dependabot.yml for all package ecosystems
-- Remove old .github directories from controller/, e2e/, protocol/, python/
-
-Testing:
-- Add e2e/setup-e2e.sh script for one-time e2e environment setup
-- Add e2e/run-e2e.sh script for running end-to-end tests
-- Auto-detects and installs bats helper libraries on macOS
-- Update Makefile with 'make e2e-setup', 'make e2e', 'make e2e-full', and 'make e2e-clean' targets
-- Split setup and run for faster test iteration
-- Configure dex to use dex.127.0.0.1.nip.io (no /etc/hosts modification needed)
-- Add e2e-clean target to remove kind cluster, certificates, and virtual environment
-
-Documentation:
-- Add unified README.md with overview of all components
-
-Configuration:
-- Add typos.toml to exclude false positives (ANDed, mosquitto, etc.)
-- Update Python package paths (raw-options root) for monorepo structure
-- Update multiversion.sh paths for monorepo worktree structure
-- Update Python Dockerfiles to use repo root context (includes .git for hatch-vcs)
-EOF
-)"
+    # Commit any remaining uncommitted changes
+    if ! git diff --quiet || ! git diff --cached --quiet; then
+        git add -A
+        git commit -m "Apply remaining monorepo adjustments"
+        log_info "✓ Committed remaining changes"
+    fi
 
     # Add remote origin
     git remote add origin git@github.com:jumpstarter-dev/monorepo.git
+    log_info "✓ Remote origin added"
 
     cd "${SCRIPT_DIR}"
-    log_info "Monorepo finalized with remote origin added."
+    log_info "Monorepo finalized."
 }
 
 # Merge release branches from python repository
@@ -477,20 +479,46 @@ main() {
     copy_typos_config
     echo ""
 
+    # git commit
+    git_commit "Add root configuration files" "- Add Makefile with unified build targets
+- Add README.md with monorepo overview
+- Add typos.toml configuration"
+    echo ""
+
     # Fix Python package paths for monorepo structure
     fix_python_package_paths
+    echo ""
+
+    # git commit
+    git_commit "Fix Python package paths for monorepo structure" "Update pyproject.toml files to adjust raw-options root paths
+from '../..' to '../../..' to account for monorepo subdirectory."
     echo ""
 
     # Fix multiversion docs script
     fix_multiversion_script
     echo ""
 
+    # git commit
+    git_commit "Fix multiversion docs script for monorepo" "Update multiversion.sh to use correct paths with python/ prefix
+in worktree structure."
+    echo ""
+
     # Fix Python container files
     fix_python_containerfiles
     echo ""
 
-    # Fix e2e dex configuration
-    fix_e2e_dex_config
+    # Fix e2e dex certificate
+    fix_e2e_dex_cert
+    echo ""
+
+    # Fix Kind cluster config
+    fix_kind_cluster_config
+    echo ""
+
+    # git commit
+    git_commit "Fix controller and e2e configurations" "- Update Python container files for monorepo build paths
+- Add dex nodeport to Kind cluster configuration
+- Fix e2e dex certificate settings"
     echo ""
 
     # Setup GitHub Actions
@@ -499,6 +527,13 @@ main() {
 
     # Copy e2e test scripts
     copy_e2e_scripts
+    echo ""
+
+    # git commit
+    git_commit "Configure GitHub Actions and e2e test scripts" "- Add unified GitHub Actions workflows with path filters
+- Configure dependabot for all package ecosystems
+- Remove old .github directories from subdirectories
+- Install e2e test scripts (setup-e2e.sh, run-e2e.sh, tests.bats)"
     echo ""
 
     # Finalize monorepo (commit changes, add remote)

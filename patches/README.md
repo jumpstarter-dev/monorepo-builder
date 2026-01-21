@@ -4,6 +4,20 @@ This directory contains source files that replace or supplement files from the u
 
 ## Files
 
+### `tests.bats`
+- **Destination:** `monorepo/e2e/tests.bats`
+- **Purpose:** Monorepo-adapted version of e2e test suite (replaces upstream)
+- **Usage:** Run via `make e2e` or `bash e2e/run-e2e.sh`
+- **Changes from upstream:**
+  - Replaces `$GITHUB_ACTION_PATH` with `e2e` for correct paths
+  - Uses temporary file (`$BATS_RUN_TMPDIR/exporter_pids.txt`) to track background exporter process PIDs across tests
+  - Implements `setup_file()` to initialize PID tracking file
+  - Implements `teardown_file()` to kill tracked processes after all tests complete
+  - Includes fallback `pkill` to catch orphaned `jmp run --exporter` processes
+  - Uses stderr (`>&2`) for debug output visibility
+  - Fixes `JMP_NAME` from `test-exporter-legacy` to `test-client-legacy`
+  - Prevents hanging exporter processes after test completion
+
 ### `setup-e2e.sh`
 - **Destination:** `monorepo/e2e/setup-e2e.sh`
 - **Purpose:** One-time setup for e2e testing environment (not in upstream)
@@ -11,7 +25,10 @@ This directory contains source files that replace or supplement files from the u
 - **Features:**
   - Installs dependencies (uv, Python, bats)
   - Auto-detects and installs bats helper libraries on macOS
-  - Deploys dex with nip.io hostname (no /etc/hosts modification needed)
+  - Deploys dex with TLS certificates
+  - Adds dex.dex.svc.cluster.local to /etc/hosts
+  - Installs CA certificate (macOS: login keychain, Linux: system-wide)
+  - Configures SSL_CERT_FILE and REQUESTS_CA_BUNDLE for Python
   - Deploys controller
   - Installs Jumpstarter packages
   - Creates setup marker file for run script
@@ -25,6 +42,7 @@ This directory contains source files that replace or supplement files from the u
   - Runs bats test suite quickly
   - Supports `--full` flag for complete setup+run cycle
   - Works in CI and local development
+  - Trap for INT/TERM signals to cleanup exporters on Ctrl+C
 
 ## Cleanup
 
@@ -41,12 +59,13 @@ This directory contains source files that replace or supplement files from the u
 
 The `build-monorepo.sh` script applies these patches during the monorepo build:
 
-1. `setup_github_actions()` - Removes upstream `e2e/action.yml` (e2e workflow uses make targets directly)
-2. `copy_e2e_scripts()` - Copies `setup-e2e.sh` and `run-e2e.sh` to the e2e directory
-3. `fix_e2e_dex_config()` - Updates upstream e2e files to use dex.127.0.0.1.nip.io:
-   - `e2e/dex-csr.json` - Adds nip.io hostname to certificate
-   - `e2e/dex.values.yaml` - Updates issuer URL
-   - `e2e/tests.bats` - Updates all login commands and replaces `$GITHUB_ACTION_PATH` with `e2e`
+1. `fix_kind_cluster_config()` - Updates Kind cluster configuration:
+   - `controller/hack/kind_cluster.yaml` - Adds dex nodeport (32000:5556) for e2e tests
+2. `setup_github_actions()` - Removes upstream `e2e/action.yml` (e2e workflow uses make targets directly)
+3. `copy_e2e_scripts()` - Copies files to the e2e directory:
+   - `setup-e2e.sh` - One-time environment setup script
+   - `run-e2e.sh` - Test runner script  
+   - `tests.bats` - Full replacement of upstream test suite (with cleanup logic)
 
 ## Adding New Patches
 

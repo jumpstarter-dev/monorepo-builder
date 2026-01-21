@@ -226,14 +226,26 @@ deploy_dex() {
     # Install CA certificate
     log_info "Installing CA certificate..."
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        log_warn "About to add the CA certificate to your macOS login keychain"
-        security add-trusted-cert -d -r trustRoot -k ~/Library/Keychains/login.keychain-db ca.pem
-        log_info "✓ CA certificate added to macOS login keychain"
+        # this may be unnecessary, but keeping it here for now
+        #log_warn "About to add the CA certificate to your macOS login keychain"
+        #security add-trusted-cert -d -r trustRoot -k ~/Library/Keychains/login.keychain-db ca.pem
+        #log_info "✓ CA certificate added to macOS login keychain"
+        true
     else
         log_warn "About to install the CA certificate system-wide (requires sudo)"
         sudo cp ca.pem /usr/local/share/ca-certificates/dex.crt
         sudo update-ca-certificates
         log_info "✓ CA certificate installed system-wide"
+    fi
+    
+    # Add dex to /etc/hosts if not already present
+    log_info "Checking /etc/hosts for dex entry..."
+    if ! grep -q "dex.dex.svc.cluster.local" /etc/hosts 2>/dev/null; then
+        log_warn "About to add 'dex.dex.svc.cluster.local' to /etc/hosts (requires sudo)"
+        echo "127.0.0.1 dex.dex.svc.cluster.local" | sudo tee -a /etc/hosts
+        log_info "✓ Added dex to /etc/hosts"
+    else
+        log_info "✓ dex.dex.svc.cluster.local already in /etc/hosts"
     fi
     
     log_info "✓ Dex deployed"
@@ -280,9 +292,8 @@ setup_test_environment() {
     export ENDPOINT=$(helm get values jumpstarter --output json | jq -r '."jumpstarter-controller".grpc.endpoint')
     log_info "Controller endpoint: $ENDPOINT"
     
-    echo "The following step will create /etc/jumpstarter/exporters directory and set the ownership to the current user."
-
     # Setup exporters directory
+    echo "Setting up exporters directory in /etc/jumpstarter/exporters..., will need permissions"
     sudo mkdir -p /etc/jumpstarter/exporters
     sudo chown "$USER" /etc/jumpstarter/exporters
     
@@ -296,6 +307,10 @@ setup_test_environment() {
     echo "JS_NAMESPACE=$JS_NAMESPACE" >> "$REPO_ROOT/.e2e-setup-complete"
     echo "REPO_ROOT=$REPO_ROOT" >> "$REPO_ROOT/.e2e-setup-complete"
     echo "SCRIPT_DIR=$SCRIPT_DIR" >> "$REPO_ROOT/.e2e-setup-complete"
+    
+    # Set SSL certificate paths for Python to use the generated CA
+    echo "SSL_CERT_FILE=$REPO_ROOT/ca.pem" >> "$REPO_ROOT/.e2e-setup-complete"
+    echo "REQUESTS_CA_BUNDLE=$REPO_ROOT/ca.pem" >> "$REPO_ROOT/.e2e-setup-complete"
     
     log_info "✓ Test environment ready"
 }
