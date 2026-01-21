@@ -177,6 +177,13 @@ copy_readme() {
     cp "${SCRIPT_DIR}/README.monorepo.md" "${MONOREPO_DIR}/README.md"
 }
 
+# Copy import_pr.sh script to monorepo
+copy_import_pr_script() {
+    log_info "Copying import_pr.sh to monorepo..."
+    cp "${SCRIPT_DIR}/import_pr.sh" "${MONOREPO_DIR}/import_pr.sh"
+    chmod +x "${MONOREPO_DIR}/import_pr.sh"
+}
+
 # Copy typos configuration to monorepo
 copy_typos_config() {
     log_info "Copying typos.toml to monorepo..."
@@ -528,6 +535,10 @@ main() {
     copy_readme
     echo ""
 
+    # Copy import_pr.sh script
+    copy_import_pr_script
+    echo ""
+
     # Copy typos configuration
     copy_typos_config
     echo ""
@@ -539,6 +550,7 @@ main() {
     # git commit
     git_commit "Add root configuration files" "- Add Makefile with unified build targets
 - Add README.md with monorepo overview
+- Add import_pr.sh for importing upstream PRs
 - Add typos.toml configuration
 - Add .gitignore for monorepo artifacts (.e2e/, .bats/, certificates, etc.)"
     echo ""
