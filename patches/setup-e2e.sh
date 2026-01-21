@@ -196,23 +196,20 @@ deploy_dex() {
         --cert=server.pem \
         --key=server-key.pem
     
-    # Create .e2e directory for overlay configuration files
+    # Create .e2e directory for configuration files
     log_info "Creating .e2e directory for local configuration..."
     mkdir -p "$REPO_ROOT/.e2e"
     
-    # Create a Helm values overlay file with just the CA certificate
-    log_info "Creating Helm values overlay with CA certificate..."
-    cat > "$REPO_ROOT/.e2e/values-overlay.yaml" <<EOF
-jumpstarter-controller:
-  config:
-    authentication:
-      jwt:
-        - issuer:
-            certificateAuthority: |
-$(sed 's/^/              /' ca.pem)
-EOF
+    # Copy values.kind.yaml to .e2e and inject the CA certificate
+    log_info "Creating values file with CA certificate..."
+    cp "$SCRIPT_DIR"/values.kind.yaml "$REPO_ROOT/.e2e/values.kind.yaml"
     
-    log_info "✓ Values overlay created at .e2e/values-overlay.yaml"
+    log_info "Injecting CA certificate into values..."
+    go run github.com/mikefarah/yq/v4@latest -i \
+        '.jumpstarter-controller.config.authentication.jwt[0].issuer.certificateAuthority = load_str("ca.pem")' \
+        "$REPO_ROOT/.e2e/values.kind.yaml"
+    
+    log_info "✓ Values file with CA certificate created at .e2e/values.kind.yaml"
     
     # Create OIDC reviewer binding (important!)
     log_info "Creating OIDC reviewer cluster role binding..."
@@ -268,9 +265,9 @@ deploy_controller() {
     
     cd "$REPO_ROOT"
     
-    # Deploy with overlay values using EXTRA_VALUES environment variable
-    log_info "Deploying controller with CA certificate overlay..."
-    EXTRA_VALUES="--values $REPO_ROOT/.e2e/values-overlay.yaml" make -C controller deploy
+    # Deploy with modified values using EXTRA_VALUES environment variable
+    log_info "Deploying controller with CA certificate..."
+    EXTRA_VALUES="--values $REPO_ROOT/.e2e/values.kind.yaml" make -C controller deploy
     
     log_info "✓ Controller deployed"
 }

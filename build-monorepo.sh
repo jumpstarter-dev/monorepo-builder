@@ -312,8 +312,8 @@ fix_e2e_values() {
     # Patch deploy_with_helm.sh to support EXTRA_VALUES environment variable
     local DEPLOY_SCRIPT="${MONOREPO_DIR}/controller/hack/deploy_with_helm.sh"
     if [ -f "$DEPLOY_SCRIPT" ]; then
-        # Add EXTRA_VALUES support to helm command
-        perl -i -pe 's|(--values ./deploy/helm/jumpstarter/values\.kind\.yaml)|$1 ${EXTRA_VALUES}|' "$DEPLOY_SCRIPT"
+        # Add EXTRA_VALUES support to helm command (after values.kind.yaml, before jumpstarter)
+        perl -i -pe 's|(--values ./deploy/helm/jumpstarter/values\.kind\.yaml)(\s+jumpstarter)|$1 \${EXTRA_VALUES}$2|' "$DEPLOY_SCRIPT"
         log_info "✓ Patched deploy_with_helm.sh to support EXTRA_VALUES"
     fi
 }
