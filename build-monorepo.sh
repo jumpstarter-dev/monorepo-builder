@@ -131,8 +131,8 @@ merge_repo() {
 
 # Copy Makefile to monorepo
 copy_makefile() {
-    log_info "Copying Makefile to monorepo..."
-    cp "${SCRIPT_DIR}/Makefile" "${MONOREPO_DIR}/Makefile"
+    log_info "Copying Makefile.monorepo to monorepo..."
+    cp "${SCRIPT_DIR}/Makefile.monorepo" "${MONOREPO_DIR}/Makefile"
 }
 
 # Copy README to monorepo
@@ -324,6 +324,30 @@ merge_python_release_branches() {
         # Create the branch in monorepo from the fetched branch
         git branch "${branch}" "python-${branch}/${branch}"
         git remote remove "python-${branch}"
+        
+        # Checkout the branch and apply Python package path fixes
+        log_info "Applying Python package path fixes to ${branch}..."
+        git checkout "${branch}"
+        
+        # Apply the same fixes as fix_python_package_paths
+        find "${MONOREPO_DIR}/python/packages" -name "pyproject.toml" | while read -r file; do
+            perl -i -pe 's|\.\./\.\.|\.\./\.\./\.\.|g' "$file"
+        done
+        
+        if [ -f "${MONOREPO_DIR}/python/__templates__/driver/pyproject.toml.tmpl" ]; then
+            perl -i -pe 's|\.\./\.\.|\.\./\.\./\.\.|g' \
+                "${MONOREPO_DIR}/python/__templates__/driver/pyproject.toml.tmpl"
+        fi
+        
+        # Commit the fixes if there are changes
+        if ! git diff --quiet; then
+            git add -A
+            git commit -m "Fix Python package paths for monorepo structure"
+            log_info "Python package paths fixed and committed for ${branch}."
+        fi
+        
+        # Switch back to main
+        git checkout main
         
         cd "${SCRIPT_DIR}"
         log_info "${branch} merged successfully."
