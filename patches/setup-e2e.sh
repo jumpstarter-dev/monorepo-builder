@@ -71,15 +71,9 @@ EOF
     fi
 }
 
-# Install bats libraries on macOS
-install_bats_libraries_macos() {
-    if ! command -v brew &> /dev/null; then
-        log_error "Homebrew not found. Please install Homebrew first."
-        exit 1
-    fi
-    
-    local BREW_PREFIX=$(brew --prefix)
-    local LIB_DIR="$BREW_PREFIX/lib"
+# Install bats libraries locally (works on all systems)
+install_bats_libraries_local() {
+    local LIB_DIR="$REPO_ROOT/.bats/lib"
     local ORIGINAL_DIR="$PWD"
     
     log_info "Installing bats helper libraries to $LIB_DIR..."
@@ -111,10 +105,15 @@ install_bats_libraries_macos() {
         log_info "bats-file already installed"
     fi
     
+    cd "$ORIGINAL_DIR"
+    
+    # Set BATS_LIB_PATH
+    export BATS_LIB_PATH="$LIB_DIR:${BATS_LIB_PATH:-}"
+    
     log_info "✓ Bats libraries installed successfully"
+    log_info "BATS_LIB_PATH set to: $BATS_LIB_PATH"
     
     # Verify installation worked
-    cd "$ORIGINAL_DIR"
     if check_bats_libraries; then
         log_info "✓ Libraries verified and working"
     else
@@ -146,35 +145,28 @@ install_dependencies() {
         log_info "Installing bats..."
         if is_ci; then
             sudo apt-get update
-            sudo apt-get install -y bats bats-support bats-assert
+            sudo apt-get install -y bats
         elif [[ "$OSTYPE" == "darwin"* ]]; then
             log_info "Installing bats-core via Homebrew..."
             brew install bats-core
         else
             log_error "bats not found. Please install it manually:"
-            log_error "  Ubuntu/Debian: sudo apt-get install bats bats-support bats-assert"
+            log_error "  Ubuntu/Debian: sudo apt-get install bats"
+            log_error "  Fedora/RHEL: sudo dnf install bats"
             log_error "  macOS: brew install bats-core"
             exit 1
         fi
     fi
     
-    # Check and install bats libraries if needed
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        if command -v brew &> /dev/null; then
-            # Set BATS_LIB_PATH
-            BREW_PREFIX=$(brew --prefix)
-            export BATS_LIB_PATH="${BREW_PREFIX}/lib:${BATS_LIB_PATH:-}"
-            
-            # Check if libraries are accessible
-            if ! check_bats_libraries; then
-                log_warn "Bats libraries not found or not accessible"
-                install_bats_libraries_macos
-            else
-                log_info "✓ Bats libraries are available"
-            fi
-            
-            log_info "BATS_LIB_PATH set to: $BATS_LIB_PATH"
-        fi
+    # Always install bats libraries locally for consistency across all systems
+    # This ensures libraries work regardless of package manager or distribution
+    if ! check_bats_libraries; then
+        log_info "Installing bats libraries locally..."
+        install_bats_libraries_local
+    else
+        log_info "✓ Bats libraries are already available"
+        # Still set BATS_LIB_PATH to include local directory for consistency
+        export BATS_LIB_PATH="$REPO_ROOT/.bats/lib:${BATS_LIB_PATH:-}"
     fi
     
     log_info "✓ Dependencies installed"
@@ -194,9 +186,7 @@ deploy_dex() {
         -config="$SCRIPT_DIR"/ca-config.json -profile=www "$SCRIPT_DIR"/dex-csr.json | \
         go run github.com/cloudflare/cfssl/cmd/cfssljson@latest -bare server
     
-    # Setup kind cluster with custom config
-    log_info "Setting up kind cluster..."
-    cp "$SCRIPT_DIR"/kind_cluster.yaml ./controller/hack/kind_cluster.yaml
+
     make -C controller cluster
     
     # Create dex namespace and TLS secret
@@ -206,11 +196,23 @@ deploy_dex() {
         --cert=server.pem \
         --key=server-key.pem
     
-    # Update values.kind.yaml with CA
-    log_info "Updating controller values with CA certificate..."
-    go run github.com/mikefarah/yq/v4@latest -i \
-        '.jumpstarter-controller.config.authentication.jwt[0].issuer.certificateAuthority = load_str("ca.pem")' \
-        "$SCRIPT_DIR"/values.kind.yaml
+    # Create .e2e directory for overlay configuration files
+    log_info "Creating .e2e directory for local configuration..."
+    mkdir -p "$REPO_ROOT/.e2e"
+    
+    # Create a Helm values overlay file with just the CA certificate
+    log_info "Creating Helm values overlay with CA certificate..."
+    cat > "$REPO_ROOT/.e2e/values-overlay.yaml" <<EOF
+jumpstarter-controller:
+  config:
+    authentication:
+      jwt:
+        - issuer:
+            certificateAuthority: |
+$(sed 's/^/              /' ca.pem)
+EOF
+    
+    log_info "✓ Values overlay created at .e2e/values-overlay.yaml"
     
     # Create OIDC reviewer binding (important!)
     log_info "Creating OIDC reviewer cluster role binding..."
@@ -266,8 +268,9 @@ deploy_controller() {
     
     cd "$REPO_ROOT"
     
-    cp "$SCRIPT_DIR"/values.kind.yaml ./controller/deploy/helm/jumpstarter/values.kind.yaml
-    make -C controller deploy
+    # Deploy with overlay values using EXTRA_VALUES environment variable
+    log_info "Deploying controller with CA certificate overlay..."
+    EXTRA_VALUES="--values $REPO_ROOT/.e2e/values-overlay.yaml" make -C controller deploy
     
     log_info "✓ Controller deployed"
 }
@@ -320,6 +323,9 @@ setup_test_environment() {
     # Set SSL certificate paths for Python to use the generated CA
     echo "SSL_CERT_FILE=$REPO_ROOT/ca.pem" >> "$REPO_ROOT/.e2e-setup-complete"
     echo "REQUESTS_CA_BUNDLE=$REPO_ROOT/ca.pem" >> "$REPO_ROOT/.e2e-setup-complete"
+    
+    # Save BATS_LIB_PATH for test runs
+    echo "BATS_LIB_PATH=$BATS_LIB_PATH" >> "$REPO_ROOT/.e2e-setup-complete"
     
     log_info "✓ Test environment ready"
 }

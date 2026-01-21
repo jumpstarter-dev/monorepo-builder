@@ -4,6 +4,13 @@ This directory contains source files that replace or supplement files from the u
 
 ## Files
 
+### `kind_cluster.yaml`
+- **Destination:** `monorepo/controller/hack/kind_cluster.yaml`
+- **Purpose:** Pre-configured Kind cluster configuration with e2e requirements (replaces upstream)
+- **Changes from upstream:**
+  - Includes dex nodeport (32000:5556) for OIDC authentication in e2e tests
+  - No runtime modifications needed during setup
+
 ### `tests.bats`
 - **Destination:** `monorepo/e2e/tests.bats`
 - **Purpose:** Monorepo-adapted version of e2e test suite (replaces upstream)
@@ -59,10 +66,13 @@ This directory contains source files that replace or supplement files from the u
 
 The `build-monorepo.sh` script applies these patches during the monorepo build:
 
-1. `fix_kind_cluster_config()` - Updates Kind cluster configuration:
-   - `controller/hack/kind_cluster.yaml` - Adds dex nodeport (32000:5556) for e2e tests
-2. `setup_github_actions()` - Removes upstream `e2e/action.yml` (e2e workflow uses make targets directly)
-3. `copy_e2e_scripts()` - Copies files to the e2e directory:
+1. `copy_kind_cluster_config()` - Replaces Kind cluster configuration:
+   - `controller/hack/kind_cluster.yaml` - Complete replacement with dex nodeport pre-configured
+2. `fix_e2e_values()` - Configures values files:
+   - Sets certificate placeholders in `e2e/values.kind.yaml` and `controller/deploy/helm/jumpstarter/values.kind.yaml`
+   - Patches `controller/hack/deploy_with_helm.sh` to support EXTRA_VALUES for Helm overlay pattern
+3. `setup_github_actions()` - Removes upstream `e2e/action.yml` (e2e workflow uses make targets directly)
+4. `copy_e2e_scripts()` - Copies files to the e2e directory:
    - `setup-e2e.sh` - One-time environment setup script
    - `run-e2e.sh` - Test runner script  
    - `tests.bats` - Full replacement of upstream test suite (with cleanup logic)

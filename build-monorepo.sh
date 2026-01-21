@@ -183,6 +183,40 @@ copy_typos_config() {
     cp "${SCRIPT_DIR}/typos.toml" "${MONOREPO_DIR}/typos.toml"
 }
 
+# Create root .gitignore for monorepo
+create_gitignore() {
+    log_info "Creating root .gitignore for monorepo..."
+    cat > "${MONOREPO_DIR}/.gitignore" <<'EOF'
+# E2E test artifacts and local configuration
+.e2e-setup-complete
+.e2e/
+.bats/
+ca.pem
+ca-key.pem
+ca.csr
+server.pem
+server-key.pem
+server.csr
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+EOF
+}
+
 # Fix Python package paths for monorepo structure
 fix_python_package_paths() {
     log_info "Fixing Python package paths for monorepo structure..."
@@ -255,28 +289,47 @@ fix_python_containerfiles() {
     log_info "Python container files updated for monorepo structure."
 }
 
-# Fix e2e dex certificate (placeholder)
-fix_e2e_dex_cert() {
-    log_info "Checking e2e dex certificate configuration..."
-    # TODO: Add dex certificate fixes if needed
-    log_info "No dex certificate fixes needed at this time."
+# Fix e2e values to use placeholder and patch deploy script
+fix_e2e_values() {
+    log_info "Setting up e2e values configuration..."
+    
+    # Ensure e2e/values.kind.yaml has placeholder for certificate
+    local E2E_VALUES="${MONOREPO_DIR}/e2e/values.kind.yaml"
+    if [ -f "$E2E_VALUES" ]; then
+        # Replace any existing certificate with placeholder
+        perl -i -0777 -pe 's/certificateAuthority:\s*\|[\s\S]*?-----END CERTIFICATE-----/certificateAuthority: placeholder/g' "$E2E_VALUES"
+        log_info "✓ E2E values configured with certificate placeholder"
+    fi
+    
+    # Ensure controller values.kind.yaml also has placeholder
+    local CONTROLLER_VALUES="${MONOREPO_DIR}/controller/deploy/helm/jumpstarter/values.kind.yaml"
+    if [ -f "$CONTROLLER_VALUES" ]; then
+        # Replace any existing certificate with placeholder
+        perl -i -0777 -pe 's/certificateAuthority:\s*\|[\s\S]*?-----END CERTIFICATE-----/certificateAuthority: placeholder/g' "$CONTROLLER_VALUES"
+        log_info "✓ Controller values configured with certificate placeholder"
+    fi
+    
+    # Patch deploy_with_helm.sh to support EXTRA_VALUES environment variable
+    local DEPLOY_SCRIPT="${MONOREPO_DIR}/controller/hack/deploy_with_helm.sh"
+    if [ -f "$DEPLOY_SCRIPT" ]; then
+        # Add EXTRA_VALUES support to helm command
+        perl -i -pe 's|(--values ./deploy/helm/jumpstarter/values\.kind\.yaml)|$1 ${EXTRA_VALUES}|' "$DEPLOY_SCRIPT"
+        log_info "✓ Patched deploy_with_helm.sh to support EXTRA_VALUES"
+    fi
 }
 
-# Fix Kind cluster config to add dex nodeport
-fix_kind_cluster_config() {
-    log_info "Fixing Kind cluster config for e2e tests..."
+# Copy Kind cluster config with dex nodeport pre-configured
+copy_kind_cluster_config() {
+    log_info "Copying Kind cluster config for e2e tests..."
     
     local KIND_CONFIG="${MONOREPO_DIR}/controller/hack/kind_cluster.yaml"
-    if [ -f "$KIND_CONFIG" ]; then
-        # Add dex nodeport (32000:5556) before the 443 port mapping
-        # Only add if not already present
-        if ! grep -q "containerPort: 32000" "$KIND_CONFIG"; then
-            perl -i -pe 's|(  - containerPort: 443)|  - containerPort: 32000 # dex nodeport\n    hostPort: 5556\n    protocol: TCP\n\n$1|' "$KIND_CONFIG"
-            log_info "✓ Added dex nodeport to kind_cluster.yaml"
-        fi
-        
-        # Update grpc router comment (remove replica number)
-        perl -i -pe 's|# grpc router nodeport \(replica \d+\)|# grpc router nodeport|' "$KIND_CONFIG"
+    local PATCHES_KIND_CONFIG="${SCRIPT_DIR}/patches/kind_cluster.yaml"
+    
+    if [ -f "$PATCHES_KIND_CONFIG" ]; then
+        cp "$PATCHES_KIND_CONFIG" "$KIND_CONFIG"
+        log_info "✓ Kind cluster config copied (includes dex nodeport)"
+    else
+        log_warn "Patches kind_cluster.yaml not found, skipping..."
     fi
 }
 
@@ -479,10 +532,15 @@ main() {
     copy_typos_config
     echo ""
 
+    # Create root .gitignore
+    create_gitignore
+    echo ""
+
     # git commit
     git_commit "Add root configuration files" "- Add Makefile with unified build targets
 - Add README.md with monorepo overview
-- Add typos.toml configuration"
+- Add typos.toml configuration
+- Add .gitignore for monorepo artifacts (.e2e/, .bats/, certificates, etc.)"
     echo ""
 
     # Fix Python package paths for monorepo structure
@@ -507,18 +565,19 @@ in worktree structure."
     fix_python_containerfiles
     echo ""
 
-    # Fix e2e dex certificate
-    fix_e2e_dex_cert
+    # Fix e2e values configuration
+    fix_e2e_values
     echo ""
 
-    # Fix Kind cluster config
-    fix_kind_cluster_config
+    # Copy Kind cluster config
+    copy_kind_cluster_config
     echo ""
 
     # git commit
     git_commit "Fix controller and e2e configurations" "- Update Python container files for monorepo build paths
-- Add dex nodeport to Kind cluster configuration
-- Fix e2e dex certificate settings"
+- Copy Kind cluster config with dex nodeport pre-configured
+- Configure controller and e2e values with certificate placeholder
+- Patch deploy_with_helm.sh to support EXTRA_VALUES for Helm overlay pattern"
     echo ""
 
     # Setup GitHub Actions

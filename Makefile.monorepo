@@ -144,8 +144,12 @@ e2e-clean:
 	@echo "Removing certificates and setup files..."
 	@rm -f ca.pem ca-key.pem ca.csr server.pem server-key.pem server.csr
 	@rm -f .e2e-setup-complete
+	@echo "Removing local e2e configuration directory..."
+	@rm -rf .e2e
 	@echo "Removing virtual environment..."
 	@rm -rf .venv
+	@echo "Removing local bats libraries..."
+	@rm -rf .bats
 	@if [ -d /etc/jumpstarter/exporters ] && [ -w /etc/jumpstarter/exporters ]; then \
 		echo "Removing exporter configs..."; \
 		rm -rf /etc/jumpstarter/exporters/* 2>/dev/null || true; \

@@ -62,13 +62,15 @@ check_setup() {
 
 # Setup environment for bats
 setup_bats_env() {
-    # Set BATS_LIB_PATH for macOS (Homebrew)
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        if command -v brew &> /dev/null; then
-            BREW_PREFIX=$(brew --prefix)
-            export BATS_LIB_PATH="${BREW_PREFIX}/lib:${BATS_LIB_PATH:-}"
-            log_info "Set BATS_LIB_PATH for macOS: $BATS_LIB_PATH"
-        fi
+    # Always set BATS_LIB_PATH to include local libraries
+    local LOCAL_BATS_LIB="$REPO_ROOT/.bats/lib"
+    
+    if [ -d "$LOCAL_BATS_LIB" ]; then
+        export BATS_LIB_PATH="$LOCAL_BATS_LIB:${BATS_LIB_PATH:-}"
+        log_info "Set BATS_LIB_PATH to local libraries: $BATS_LIB_PATH"
+    else
+        log_warn "Local bats libraries not found at $LOCAL_BATS_LIB"
+        log_warn "You may need to run setup-e2e.sh first"
     fi
 }
 
