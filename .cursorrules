@@ -1,0 +1,94 @@
+# Jumpstarter Monorepo Builder - Cursor Rules
+
+## Repository Overview
+
+This repository builds the Jumpstarter monorepo by merging multiple upstream repositories:
+- `jumpstarter.git` → `python/`
+- `jumpstarter-protocol.git` → `protocol/`
+- `jumpstarter-controller.git` → `controller/`
+- `jumpstarter-e2e.git` → `e2e/`
+
+## Critical Workflow
+
+**The `monorepo/` directory is regenerated from scratch on every build.**
+
+Running `make build` (or `./build-monorepo.sh`) will:
+1. Delete the existing `monorepo/` directory
+2. Clone all upstream repositories
+3. Rewrite their git history into subdirectories
+4. Merge them into a fresh monorepo
+5. Apply patches and fixes from this repository
+
+## Where to Make Changes
+
+### For Reproducible Changes (Default)
+
+Always modify these files instead of editing `monorepo/` directly unless otherwise specified.
+
+| What to Change | Where to Edit |
+|----------------|---------------|
+| GitHub Actions workflows | `github_actions/workflows/*.yaml` |
+| Dependabot config | `github_actions/dependabot.yml` |
+| Root Makefile | `Makefile.monorepo` |
+| Root README | `README.monorepo.md` |
+| Typos config | `typos.toml` |
+| E2E action.yml | `patches/e2e-action.yml` |
+| E2E setup script | `patches/setup-e2e.sh` |
+| E2E runner script | `patches/run-e2e.sh` |
+| Python path fixes | `build-monorepo.sh` → `fix_python_package_paths()` |
+| Container file fixes | `build-monorepo.sh` → `fix_python_containerfiles()` |
+| Multiversion docs fixes | `build-monorepo.sh` → `fix_multiversion_script()` |
+
+### For Testing/Prototyping Only
+
+You may edit files in `monorepo/` directly for quick testing, but understand:
+- These changes will be **lost** on the next `make build`
+- Once validated, port the changes back to `build-monorepo.sh` or the appropriate source file
+
+## Common Tasks
+
+### Rebuild the monorepo
+```bash
+make build
+```
+
+### Add a new patch/fix for upstream files
+1. Edit `build-monorepo.sh` and add a new function or extend an existing `fix_*` function
+2. Use `perl -i -pe` for search/replace operations (portable across macOS/Linux)
+3. Call your function in `main()` before `finalize_monorepo`
+4. Run `make build` to test
+
+### Modify GitHub Actions
+1. Edit files in `github_actions/workflows/`
+2. Run `make build` - they will be copied to `monorepo/.github/workflows/`
+
+### Update the root Makefile
+1. Edit `Makefile.monorepo`
+2. Run `make build` - it will be copied to `monorepo/Makefile`
+
+## File Structure
+
+```
+monorepobuilder/
+├── build-monorepo.sh      # Main build script - edit this for patches
+├── Makefile               # This repo's Makefile (runs build-monorepo.sh)
+├── Makefile.monorepo      # Gets copied to monorepo/Makefile
+├── README.monorepo.md     # Gets copied to monorepo/README.md
+├── typos.toml             # Gets copied to monorepo/typos.toml
+├── github_actions/        # Gets copied to monorepo/.github/
+│   ├── dependabot.yml
+│   └── workflows/*.yaml
+├── patches/               # Replacement files for upstream
+│   ├── e2e-action.yml     # Replaces monorepo/e2e/action.yml
+│   ├── setup-e2e.sh       # Copied to monorepo/e2e/setup-e2e.sh
+│   └── run-e2e.sh         # Copied to monorepo/e2e/run-e2e.sh
+└── monorepo/              # GENERATED - do not edit for permanent changes
+```
+
+## Guidelines for AI Assistants
+
+1. **Default behavior**: When asked to make changes, modify `build-monorepo.sh` or source files (not `monorepo/`)
+2. **Ask for clarification** if the user wants a quick test in `monorepo/` vs a reproducible change
+3. **After editing build-monorepo.sh**: Remind the user to run `make build` to regenerate
+4. **When editing monorepo/ directly**: Warn that changes will be lost on rebuild
+5. **Documentation**: NEVER create documentation files (*.md) unless explicitly requested by the user

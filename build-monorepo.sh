@@ -220,6 +220,43 @@ fix_python_containerfiles() {
     log_info "Python container files updated for monorepo structure."
 }
 
+# Fix e2e dex configuration to use nip.io instead of /etc/hosts
+fix_e2e_dex_config() {
+    log_info "Fixing e2e dex configuration to use nip.io..."
+    
+    # Fix dex-csr.json to include dex.127.0.0.1.nip.io in certificate hosts
+    local DEX_CSR="${MONOREPO_DIR}/e2e/dex-csr.json"
+    if [ -f "$DEX_CSR" ]; then
+        perl -i -pe 's|("hosts": \[\s*"dex\.dex\.svc\.cluster\.local")|$1,\n        "dex.127.0.0.1.nip.io"|' "$DEX_CSR"
+        log_info "✓ dex-csr.json updated to include dex.127.0.0.1.nip.io"
+    fi
+    
+    # Fix dex.values.yaml to use dex.127.0.0.1.nip.io as issuer
+    local DEX_VALUES="${MONOREPO_DIR}/e2e/dex.values.yaml"
+    if [ -f "$DEX_VALUES" ]; then
+        perl -i -pe 's|https://dex\.dex\.svc\.cluster\.local:5556|https://dex.127.0.0.1.nip.io:5556|g' "$DEX_VALUES"
+        log_info "✓ dex.values.yaml updated to use dex.127.0.0.1.nip.io"
+    fi
+    
+    # Fix values.kind.yaml to use dex.127.0.0.1.nip.io as issuer URL
+    local VALUES_KIND="${MONOREPO_DIR}/e2e/values.kind.yaml"
+    if [ -f "$VALUES_KIND" ]; then
+        perl -i -pe 's|url: https://dex\.dex\.svc\.cluster\.local:5556|url: https://dex.127.0.0.1.nip.io:5556|g' "$VALUES_KIND"
+        log_info "✓ values.kind.yaml updated to use dex.127.0.0.1.nip.io"
+    fi
+    
+    # Fix tests.bats to use dex.127.0.0.1.nip.io for all login commands
+    local TESTS_BATS="${MONOREPO_DIR}/e2e/tests.bats"
+    if [ -f "$TESTS_BATS" ]; then
+        perl -i -pe 's|https://dex\.dex\.svc\.cluster\.local:5556|https://dex.127.0.0.1.nip.io:5556|g' "$TESTS_BATS"
+        # Replace $GITHUB_ACTION_PATH with e2e directory (tests run from monorepo root)
+        perl -i -pe 's|\$GITHUB_ACTION_PATH|e2e|g' "$TESTS_BATS"
+        log_info "✓ tests.bats updated to use dex.127.0.0.1.nip.io and e2e paths"
+    fi
+    
+    log_info "E2E dex configuration updated (no /etc/hosts modification needed)."
+}
+
 # Setup GitHub Actions for monorepo
 setup_github_actions() {
     log_info "Setting up GitHub Actions..."
@@ -229,10 +266,10 @@ setup_github_actions() {
     cp -r "${SCRIPT_DIR}/github_actions/workflows/"* "${MONOREPO_DIR}/.github/workflows/"
     cp "${SCRIPT_DIR}/github_actions/dependabot.yml" "${MONOREPO_DIR}/.github/"
 
-    # Replace e2e/action.yml with monorepo version
-    if [ -f "${SCRIPT_DIR}/patches/e2e-action.yml" ]; then
-        log_info "Replacing e2e/action.yml with monorepo version..."
-        cp "${SCRIPT_DIR}/patches/e2e-action.yml" "${MONOREPO_DIR}/e2e/action.yml"
+    # Remove e2e/action.yml (no longer needed, e2e workflow uses make targets directly)
+    if [ -f "${MONOREPO_DIR}/e2e/action.yml" ]; then
+        log_info "Removing e2e/action.yml (no longer needed)..."
+        rm -f "${MONOREPO_DIR}/e2e/action.yml"
     fi
 
     # Remove old .github directories from merged repos
@@ -250,6 +287,29 @@ setup_github_actions() {
     fi
 
     log_info "GitHub Actions setup complete."
+}
+
+# Copy e2e test scripts
+copy_e2e_scripts() {
+    log_info "Copying e2e test scripts..."
+    
+    # Copy setup script
+    if [ -f "${SCRIPT_DIR}/patches/setup-e2e.sh" ]; then
+        cp "${SCRIPT_DIR}/patches/setup-e2e.sh" "${MONOREPO_DIR}/e2e/setup-e2e.sh"
+        chmod +x "${MONOREPO_DIR}/e2e/setup-e2e.sh"
+        log_info "✓ E2E setup script installed at e2e/setup-e2e.sh"
+    else
+        log_warn "Warning: patches/setup-e2e.sh not found, skipping..."
+    fi
+    
+    # Copy run script
+    if [ -f "${SCRIPT_DIR}/patches/run-e2e.sh" ]; then
+        cp "${SCRIPT_DIR}/patches/run-e2e.sh" "${MONOREPO_DIR}/e2e/run-e2e.sh"
+        chmod +x "${MONOREPO_DIR}/e2e/run-e2e.sh"
+        log_info "✓ E2E test runner script installed at e2e/run-e2e.sh"
+    else
+        log_warn "Warning: patches/run-e2e.sh not found, skipping..."
+    fi
 }
 
 # Commit the GitHub Actions changes and add remote
@@ -270,9 +330,18 @@ GitHub Actions:
 - Merge duplicate backport workflows into single workflow
 - Consolidate lint workflows (Go, Helm, protobuf, Python, typos)
 - Merge container image builds (controller + python) into single workflow
-- Adapt e2e/action.yml for monorepo structure (remove separate checkouts)
+- E2E workflow uses make targets (e2e-setup, e2e-run) instead of composite action
 - Add combined dependabot.yml for all package ecosystems
 - Remove old .github directories from controller/, e2e/, protocol/, python/
+
+Testing:
+- Add e2e/setup-e2e.sh script for one-time e2e environment setup
+- Add e2e/run-e2e.sh script for running end-to-end tests
+- Auto-detects and installs bats helper libraries on macOS
+- Update Makefile with 'make e2e-setup', 'make e2e', 'make e2e-full', and 'make e2e-clean' targets
+- Split setup and run for faster test iteration
+- Configure dex to use dex.127.0.0.1.nip.io (no /etc/hosts modification needed)
+- Add e2e-clean target to remove kind cluster, certificates, and virtual environment
 
 Documentation:
 - Add unified README.md with overview of all components
@@ -420,8 +489,16 @@ main() {
     fix_python_containerfiles
     echo ""
 
+    # Fix e2e dex configuration
+    fix_e2e_dex_config
+    echo ""
+
     # Setup GitHub Actions
     setup_github_actions
+    echo ""
+
+    # Copy e2e test scripts
+    copy_e2e_scripts
     echo ""
 
     # Finalize monorepo (commit changes, add remote)
