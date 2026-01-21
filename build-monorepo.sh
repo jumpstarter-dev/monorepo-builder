@@ -182,7 +182,8 @@ fix_multiversion_script() {
         perl -i -pe 's|\$\{WORKTREE\}/docs/build|\${WORKTREE}/python/docs/build|g' "$SCRIPT"
         
         # Update BRANCHES array to only contain "main" (but keep array structure for easy additions)
-        perl -i -pe 's|^declare -a BRANCHES=\(.*\)$|declare -a BRANCHES=("main")|' "$SCRIPT"
+        # COMMENTED OUT: We're merging release branches from python repo to support multi-version docs
+        # perl -i -pe 's|^declare -a BRANCHES=\(.*\)$|declare -a BRANCHES=("main")|' "$SCRIPT"
         
         log_info "multiversion.sh updated."
     fi
@@ -291,6 +292,47 @@ EOF
     log_info "Monorepo finalized with remote origin added."
 }
 
+# Merge release branches from python repository
+merge_python_release_branches() {
+    log_info "Merging Python release branches for documentation..."
+    
+    local PYTHON_URL="https://github.com/jumpstarter-dev/jumpstarter.git"
+    local RELEASE_BRANCHES=("release-0.5" "release-0.6" "release-0.7")
+    
+    for branch in "${RELEASE_BRANCHES[@]}"; do
+        log_info "Processing ${branch}..."
+        
+        # Create a temp directory for this branch
+        local BRANCH_DIR="${TEMP_DIR}/python-${branch}"
+        
+        # Clone the specific branch
+        log_info "Cloning ${branch} from python repository..."
+        git clone --single-branch --branch "${branch}" "${PYTHON_URL}" "${BRANCH_DIR}"
+        
+        # Rewrite history to python/ subdirectory
+        log_info "Rewriting ${branch} history to python/..."
+        cd "${BRANCH_DIR}"
+        git filter-repo --to-subdirectory-filter "python" --force
+        cd "${SCRIPT_DIR}"
+        
+        # Merge into monorepo as a branch
+        log_info "Merging ${branch} into monorepo..."
+        cd "${MONOREPO_DIR}"
+        git remote add "python-${branch}" "${BRANCH_DIR}"
+        git fetch "python-${branch}"
+        
+        # Create the branch in monorepo from the fetched branch
+        git branch "${branch}" "python-${branch}/${branch}"
+        git remote remove "python-${branch}"
+        
+        cd "${SCRIPT_DIR}"
+        log_info "${branch} merged successfully."
+        echo ""
+    done
+    
+    log_info "All Python release branches merged."
+}
+
 # Main execution
 main() {
     log_info "Starting monorepo build process..."
@@ -360,6 +402,10 @@ main() {
 
     # Finalize monorepo (commit changes, add remote)
     finalize_monorepo
+    echo ""
+
+    # Merge Python release branches for documentation
+    merge_python_release_branches
     echo ""
 
     # Clean up temp directory
